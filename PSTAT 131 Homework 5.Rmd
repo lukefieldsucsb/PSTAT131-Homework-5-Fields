@@ -177,9 +177,9 @@ autoplot(pokemon_tune_res)
 
 Do larger or smaller values of penalty and mixture produce better accuracy and ROC AUC?
 
-For ROC AUC, the smaller mixtures produced significantly better ROC AUC results
+For ROC AUC, the smaller mixtures produced significantly better ROC AUC results, especially at higher amounts of penalty / regularization. 
 
-For accuracy, the mixture values were mostly the same at producing better accuracy, with the
+For accuracy, the mixture values were mostly the same at producing better accuracy, with the penalty and regularization also not having too strong of an effect. 
 
 ```{r}
 collect_metrics(pokemon_tune_res)
@@ -235,6 +235,6 @@ Looking at the ROC curves, Normal and Psychic appear to perform a lot better tha
 
 These results are backed up by the confusion matrix, as Normal type is correctly predicted 16 times, significantly more often than it is incorrectly predicted. The opposite can be seen for the Water type predictions, as even though Water type Pokemon were correctly predicted to be Water type 16 times, their type was also incorrectly predicted 18 times. 
 
-The reason our model performed so poorly is because Water type pokemon, and even Fire and Grass type, make up a significant amount of our dataset. So, if the model is correctly predicting a significant amount of Pokemon types incorrectly majority of the  time, then our model is obviously going to suffer, which it unfortunately did. 
+The reason our model performed so poorly is because Water type Pokemon, and even Fire and Grass type, make up a significant amount of our dataset. So, if the model is correctly predicting a significant amount of Pokemon types incorrectly majority of the  time, then our model is obviously going to suffer, which it unfortunately did. 
 
 # END OF HOMEWORK 5
