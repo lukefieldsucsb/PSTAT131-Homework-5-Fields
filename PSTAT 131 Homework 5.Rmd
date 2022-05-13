@@ -1,0 +1,240 @@
+
+---
+title: "PSTAT 131 Homework 5"
+author: "Luke Fields (8385924)"
+date: "`r format(Sys.Date(), 'May 11, 2022')`"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+Below are the packages and libraries we are using in this assignment. 
+  
+```{r setup, message = FALSE}
+library(corrplot)
+library(discrim)
+library(corrr)
+library(knitr)
+library(MASS)
+library(tidyverse)
+library(tidymodels)
+library(ggplot2)
+library(glmnet)
+library("dplyr")
+library("yardstick")
+tidymodels_prefer()
+pokemon <- read_csv("Pokemon.csv")
+# set global chunk options: images will be 7x5 inches
+knitr::opts_chunk$set(
+	echo = TRUE,
+	fig.height = 5,
+	fig.width = 7,
+	tidy = TRUE,
+	tidy.opts = list(width.cutoff = 60)
+)
+opts_chunk$set(tidy.opts=list(width.cutoff=60),tidy=TRUE)
+options(digits = 4)
+
+
+
+## indents are for indenting r code as formatted text
+## They may need to be adjusted depending on your OS
+# if your output looks odd, increase or decrease indent
+indent1 = '    '
+indent2 = '        '
+indent3 = '            '
+```
+
+### Exercise 1: Install and load the janitor package. Use its clean_names() function on the Pokémon data, and save the results to work with for the rest of the assignment. What happened to the data? Why do you think clean_names() is useful?
+
+```{r}
+pokemon
+```
+
+
+```{r}
+library(janitor)
+pokemon <- pokemon %>%
+  clean_names
+pokemon
+```
+Clean_names is useful because it helps clean up the variable names that may have special characters that mean the same thing but are different literally, like the difference between "Charizard_X" and "Charizard X", but these are obviously the same Pokemon. For our data, the variables changed to lowercase and added underscores from something like "Type 1" to "type_1" to make everything more standard. 
+
+### Exercise 2: Using the entire data set, create a bar chart of the outcome variable, type_1. How many classes of the outcome are there? Are there any Pokémon types with very few Pokémon? If so, which ones? For this assignment, we’ll handle the rarer classes by simply filtering them out. Filter the entire data set to contain only Pokémon whose type_1 is Bug, Fire, Grass, Normal, Water, or Psychic. After filtering, convert type_1 and legendary to factors.
+
+
+First, we create our bar plot. 
+```{r}
+bar_type1_pokemon <- ggplot(pokemon, aes(x = type_1)) +
+  geom_bar(color = "orange")
+bar_type1_pokemon + labs(title = "Amount of Pokemon By Type", x = "Type 1 Of The Pokemon", y = "Total Amount of Pokemon")
+```
+
+Now, we get how many different types there are. 
+
+```{r}
+n_distinct(pokemon$type_1)
+```
+
+From this bar plot, we can see that there 18 different classes of the outcome, so there are 18 different Type 1's for a Pokemon. There are very few fairy, fighting, ground, ice, poison, and steel Type 1 Pokemon, and only a handful of flying Type 1 Pokemon. So, we will filter our pokemon data into only pokemon that have type Bug, Fire, Grass, Normal, Water, or Psychic. 
+
+```{r}
+pokemon <- filter(pokemon, type_1 %in% c("Bug", "Fire", "Grass", "Normal", "Water", "Psychic"))
+pokemon
+```
+Lastly, we will convert type_1 and legendary to factors within our dataset. 
+
+```{r}
+pokemon$type_1 <- as.factor(pokemon$type_1)
+pokemon$legendary <- as.factor(pokemon$legendary)
+pokemon$generation <- as.factor(pokemon$generation)
+pokemon
+```
+
+
+
+
+### Exercise 3: Perform an initial split of the data. Stratify by the outcome variable. You can choose a proportion to use. Verify that your training and test sets have the desired number of observations. Next, use v-fold cross-validation on the training set. Use 5 folds. Stratify the folds by type_1 as well. Hint: Look for a strata argument. Why might stratifying the folds be useful?
+
+First, we will perform our intial split into our training and testing sets. 
+```{r}
+set.seed(912)
+pokemon_split <- initial_split(pokemon, 
+                               prop = 0.7, strata = type_1)
+pokemon_train <- training(pokemon_split)
+pokemon_test <- testing(pokemon_split)
+
+dim(pokemon_train)
+dim(pokemon_test)
+0.7 * nrow(pokemon)
+0.3 * nrow(pokemon)
+```
+
+After performing a 70/30 train/test split, we see that there are 318  and 140 observations in the training data set and test data set, respectively, so it is verified that the training and testing sets have approximately the correct dimension, as 70% of the original data yields 320.6 observations, and 30% of the original data yields 137.4 observations.
+
+
+```{r}
+pokemon_folds <- vfold_cv(pokemon_train, v = 5, strata = type_1)
+pokemon_folds
+```
+The whole point of performing our fold cross validation is to try and continue to train our model even more. If our model is built upon the fact that type-1 is stratified, then it would be pointless for our folds to not take into account this decision. 
+
+
+### Exercise 4: Set up a recipe to predict type_1 with legendary, generation, sp_atk, attack, speed, defense, hp, and sp_def. Dummy-code legendary and generation; Center and scale all predictors.
+
+Below is our recipe. 
+```{r}
+pokemon_recipe <- 
+  recipe(type_1 ~ legendary + generation + sp_atk + attack +
+           speed + defense + hp + sp_def, data = pokemon_train) %>%
+  step_dummy(legendary) %>%
+  step_dummy(generation) %>%
+  step_normalize(all_predictors())
+
+pokemon_recipe
+```
+
+
+### Exercise 5: We’ll be fitting and tuning an elastic net, tuning penalty and mixture (use multinom_reg with the glmnet engine). Set up this model and workflow. Create a regular grid for penalty and mixture with 10 levels each; mixture should range from 0 to 1. For this assignment, we’ll let penalty range from -5 to 5 (it’s log-scaled). How many total models will you be fitting when you fit these models to your folded data?
+
+First, we will set up our model for multinomial regression with our Pokemon data. 
+```{r}
+pokemon_multreg <- multinom_reg(mixture = tune(), penalty = tune()) %>%
+  set_mode("classification") %>%
+  set_engine("glmnet")
+```
+
+Next, we will set up our workflow for multinomial regression with our Pokemon data model and recipe. 
+```{r}
+pokemon_wf <- workflow() %>%
+  add_recipe(pokemon_recipe) %>%
+  add_model(pokemon_multreg)
+```
+
+Lastly, we will set up our regular grid for penalty and mixture. 
+```{r}
+pokemon_grid <- grid_regular(penalty(range = c(-5, 5)),
+                             mixture(range = c(0, 1)),
+                             levels = 10)
+pokemon_grid
+```
+We will be fitting 100 models, as there will be 10 different 10 models for each of the 10 different mixture levels. 
+
+### Exercise 6: Fit the models to your folded data using tune_grid(). Use autoplot() on the results. What do you notice? Do larger or smaller values of penalty and mixture produce better accuracy and ROC AUC?
+
+
+```{r}
+pokemon_tune_res <- tune_grid(pokemon_wf,
+                              resamples = pokemon_folds, 
+                              grid = pokemon_grid)
+```
+
+
+```{r}
+autoplot(pokemon_tune_res)
+```
+
+Do larger or smaller values of penalty and mixture produce better accuracy and ROC AUC?
+
+For ROC AUC, the smaller mixtures produced significantly better ROC AUC results
+
+For accuracy, the mixture values were mostly the same at producing better accuracy, with the
+
+```{r}
+collect_metrics(pokemon_tune_res)
+```
+
+
+### Exercise 7: Use select_best() to choose the model that has the optimal roc_auc. Then use finalize_workflow(), fit(), and augment() to fit the model to the training set and evaluate its performance on the testing set.
+
+We will select our best model, which is the 34th model our of the 100 we have, and then fit this model to the training set before evaluating its performance on the testing set. 
+
+```{r}
+pokemon_best_pen <- select_best(pokemon_tune_res, metric = "roc_auc")
+
+pokemon_multreg_final <- finalize_workflow(pokemon_wf, pokemon_best_pen)
+
+pokemon_final_fit <- fit(pokemon_multreg_final, data = pokemon_train)
+
+augment(pokemon_final_fit, new_data = pokemon_test) %>%
+  accuracy(truth = type_1, estimate = .pred_class)
+```
+We did not have the most accurate estimator, unfortunately. 
+
+### Exercise 8: Calculate the overall ROC AUC on the testing set. Then create plots of the different ROC curves, one per level of the outcome. Also make a heat map of the confusion matrix. What do you notice? How did your model do? Which Pokemon types is the model best at predicting, and which is it worst at? Do you have any ideas why this might be?
+
+First, we will calculate the overall ROC AUC on the testing set. 
+```{r}
+augment(pokemon_final_fit, new_data = pokemon_test) %>%
+  roc_auc(truth = type_1, estimate = c(".pred_Bug", ".pred_Fire", ".pred_Grass",
+                                        ".pred_Normal", ".pred_Psychic", ".pred_Water"))
+```
+
+Next, we want to create 6 different ROC curves, each for the different types of Pokemon. 
+```{r}
+pokemon_roc_pertype <- augment(pokemon_final_fit, new_data = pokemon_test) %>%
+  roc_curve(truth = type_1, estimate = c(".pred_Bug", ".pred_Fire", ".pred_Grass",
+                                        ".pred_Normal", ".pred_Psychic", ".pred_Water"))
+
+autoplot(pokemon_roc_pertype)
+```
+
+
+We also will make a confusion matrix of our predicted class, then do a heatmap visualization of it. 
+```{r}
+pokemon_confus_mat <- augment(pokemon_final_fit, new_data = pokemon_test) %>%
+  conf_mat(truth = type_1, estimate = .pred_class)
+
+autoplot(pokemon_confus_mat, type = "heatmap")
+```
+
+Analyzing our results, we can see that our model did not perform well, esepcially when we factor in the accuracy estimate for question 7. 
+
+Looking at the ROC curves, Normal and Psychic appear to perform a lot better than the other type predictions, with Water, Fire, and Grass all struggling according to the ROC curve.
+
+These results are backed up by the confusion matrix, as Normal type is correctly predicted 16 times, significantly more often than it is incorrectly predicted. The opposite can be seen for the Water type predictions, as even though Water type Pokemon were correctly predicted to be Water type 16 times, their type was also incorrectly predicted 18 times. 
+
+The reason our model performed so poorly is because Water type pokemon, and even Fire and Grass type, make up a significant amount of our dataset. So, if the model is correctly predicting a significant amount of Pokemon types incorrectly majority of the  time, then our model is obviously going to suffer, which it unfortunately did. 
+
+# END OF HOMEWORK 5
